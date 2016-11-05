@@ -95,6 +95,7 @@ class Place
 		if(limit)
 			pipeline.push({:$limit=>limit})
 		end
+
 		result=collection.find.aggregate(pipeline) 
 	end
 
@@ -113,10 +114,42 @@ class Place
 	# return the id of each document in the places collection 
 	# that has an address_component.short_name of type country and matches the provided parameter
 	def self.find_ids_by_country_code(country_code)
+		Rails.logger.debug {'getting ids by country_code #{country_code}'}
+
 		pipeline=[]
 		pipeline.push({:$match=>{'address_components.types'=>'country', 'address_components.short_name'=>country_code}})
 		pipeline.push({:$project=>{_id:1}})
+
 		result=collection.find.aggregate(pipeline).map {|doc| doc[:_id].to_s}
+	end
+
+	# create a 2dsphere index to your collection for the geometry.geolocation property
+	def self.create_indexes
+		Place.collection.indexes.create_one ({'geometry.geolocation'=>Mongo::Index::GEO2DSPHERE})
+	end
+
+	# remove a 2dsphere index to your collection for the geometry.geolocation property
+	def self.remove_indexes
+		Place.collection.indexes.drop_one('geometry.geolocation_2dsphere')
+	end
+
+	# returns places that are closest to provided Point
+	def self.near(point, max_meters=0)
+		Place.collection.find('geometry.geolocation'=>
+						{:$near=>{
+							:$geometry=>point.to_hash,
+							:$maxDistance=>max_meters
+						}
+					})
+	end
+	
+	# wraps the class method
+	def near(max_meters=0)
+		places=[]
+		Place.near(@location, max_meters).each do |p| 
+            places.push(Place.new(p))
+        end
+        return places
 	end
 end
 	
